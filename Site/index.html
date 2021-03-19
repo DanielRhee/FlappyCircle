@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Flappy Circle</title>
+</head>
+
+<script src="/socket.io/socket.io.js">
+
+</script>
+<body onload="startGame()">
+<canvas id="canvas" width="500" height="500" style="border:1px solid #000000;"></canvas>
+</body>
+<script>
+	var socket = io();
+	var updateInterval;
+
+	var id = -1;
+
+	var lastLength = [];
+
+	var otherCoordinates = {};
+
+	var obstacles = [];
+
+	var score = 0;
+	var selfBest = 0;
+	var currServerBest = 0;
+	var allTimeServerBest = 0;
+
+	//Variable to make sure only 1 score per obstacle
+	var scoredThisPass = 30;
+
+	function startGame() {
+		//myVar = setInterval(update, 3000);
+		drawPlayer();
+		updateInterval = setInterval(update,20);
+		socket.emit('answer', "hello");
+	}
+
+	//var data = [ 16, 68, 20, 30, 54 ]; 
+	var y = 250;
+	var yVelocity = 0;
+	//get a reference to the canvas 
+	var canvas = document.getElementById('canvas'); 
+	
+	//get a reference to the drawing context 
+	var c = canvas.getContext('2d'); 
+
+	//draw player others
+	function drawOthers() {
+		if (Object.keys(otherCoordinates).length > 1) {
+			for(var curry in otherCoordinates) { 
+				//socket.emit("answer",otherCoordinates);
+				if (curry != id) {
+					c.beginPath();
+					//socket.emit("answer",otherCoordinates);
+					c.arc(100, otherCoordinates[curry], 15, 0, 2 * Math.PI);
+					c.stroke();
+					c.fillStyle = '#FFFF00';
+					c.fill(); 
+				}
+			}
+		}
+	} 
+
+	//draw player
+	function drawPlayer() {
+		c.beginPath();
+		c.arc(100, y, 15, 0, 2 * Math.PI);
+		c.stroke();
+		c.fillStyle = '#FF0000';
+		c.fill();
+	}
+
+	//draw obstacles
+	function drawObstacles() {
+		for (var i = 0; i < obstacles.length; i++) {
+			//socket.emit("answer",obstacles);
+			
+			c.fillStyle = '#00FF00';
+			c.fillRect(obstacles[i][0],obstacles[i][1],obstacles[i][2],obstacles[i][3]);
+			/*c.beginPath();
+			c.arc(obstacles[i], 100, 15, 0, 2 * Math.PI);
+			c.stroke();
+			c.fillStyle = '#00FF00';
+			c.fill();*/
+		}
+	}
+
+	//Gravity
+	function gravity() {
+		yVelocity += 1.5;
+		if (yVelocity > 3) {
+			yVelocity = 1;
+		}
+	}
+
+	//Scores stuff
+	function writeScores() { 
+		//Draw score
+		c.fillStyle = "#000000";
+		c.font = '32px sans-serif';
+		c.fillText(score, 250, 50);
+
+		//Write other Scores
+		c.font = '12px sans-serif';
+		c.fillText("Current Self Best: " + selfBest,10,25);
+		c.fillText("Current Server Best: "+currServerBest ,10,37);
+		c.fillText("All Time Server Best: " + allTimeServerBest,10,49);
+	}
+
+	//Keyboard Input
+	document.addEventListener('keydown', function(event) {
+		if(event.keyCode == 32) {
+			y -= 30
+		}
+	});
+
+	//Clear the canvas
+	function update() {
+		//Clear Background
+		c.clearRect(0, 0, canvas.width, canvas.height);
+		//Fill Background
+		c.fillStyle = "gray"; 
+		c.fillRect(0,0,500,500); 
+
+		gravity();
+		
+		drawOthers();
+
+		drawObstacles();
+		//Update Y (has to be minus because the y is backwards)
+		y += yVelocity;
+		drawPlayer();
+
+		//Stop ball from crashing into the ground
+		if (y >= 485) {
+			y = 485;
+		}
+		//Stop ball from flying too far update
+		if (y <= 15) {
+			y = 15;
+		}
+
+		//Subtract from scoredThisPass
+		scoredThisPass -= 1;
+
+		writeScores();
+
+		//check for collisions
+		for (var i = 0; i < obstacles.length; i++) {
+			if (obstacles[i][1] < 150){
+				collision(15,obstacles[i][0],obstacles[i][1],obstacles[i][2],obstacles[i][3]);
+			}
+		}
+
+		socket.emit("currentScore",score);
+
+	} 
+	//Collision stuff
+	function collision(circleRadius,rectX,rectY,rectWidth,rectHeight) {
+		//Check overlaping X positions
+		if (100+circleRadius >= rectX && 100+circleRadius <= rectX+rectWidth) {
+			//Check direct collision
+			if (y > rectY && y < rectY + rectHeight) {
+				score = 0;
+				//socket.emit("answer","HEREEE");
+			}
+			//Top left corner
+			else if (circleRadius > Math.sqrt(Math.pow((rectX-100),2) + Math.pow((rectY-y),2))) {
+				socket.emit("answer",[rectX,rectY,y])
+				socket.emit("answer",Math.sqrt(Math.pow((rectX-100),2) + Math.pow((rectY-y),2)));
+				score = 0;
+			}
+			//Top Right corner
+			else if (circleRadius > Math.sqrt(Math.pow((rectX-100),2) + Math.pow((rectY-y),2))) {
+				socket.emit("answer","here");
+				score = 0;
+			}
+			else if (circleRadius > Math.sqrt(Math.pow((rectX+rectWidth-100),2) + Math.pow((rectY-y),2))) {
+				score = 0;
+			}
+			//Bottom Left corner
+			else if (circleRadius > Math.sqrt(Math.pow((rectX-100),2) + Math.pow((rectY+rectHeight-y),2))) {
+				score = 0;
+			}
+			//Bottom Right corner
+			else if (circleRadius > Math.sqrt(Math.pow((rectX+rectWidth-100),2) + Math.pow((rectY+rectHeight-y),2))) {
+				score = 0;
+			} 
+			else {
+				if (scoredThisPass <= 0) {
+					scoredThisPass = 50;
+					score += 1;
+					if (score > selfBest) {
+						selfBest = score;
+					}
+				}
+				//socket.emit("answer","Check");
+			}
+		}
+	}
+	//Socket Listening stuff
+
+	// - Get ID 
+	socket.on("getID", function(input) {
+		if (id == -1) {
+			id = input;
+		}
+		
+	}); 
+
+	// - Send coordinates back 
+	socket.on("yCoordinatesUpdate", function(input) {
+		otherCoordinates = input;
+
+		//check debuging thing
+		//socket.emit("answer",otherCoordinates);
+
+		//update y coordinates to server
+		socket.emit('yUpdate', [id,y]);
+		
+	}); 
+
+	// - Get Obstacles 
+	socket.on("obstacleUpdate", function(input) {
+		//socket.emit("answer","update recieved")
+		obstacles = input;
+	}); 
+	// - Current Server High Score
+	socket.on("currBestScore",function(input) {
+		currServerBest = input;
+	});
+	// - All time server Best
+	socket.on("bestScore",function(input) {
+		allTimeServerBest = input;
+	}); 
+
+</script>
+
+
+</html>
